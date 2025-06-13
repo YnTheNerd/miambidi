@@ -38,8 +38,11 @@ import {
 import ImageUpload from './ImageUpload';
 import RecipeVisibilitySelector from './RecipeVisibilitySelector';
 import EnhancedIngredientInput from './EnhancedIngredientInput';
+import EditableInstructionList from './EditableInstructionList';
 import { useRecipes } from '../../contexts/RecipeContext';
 import { useFamily } from '../../contexts/FirestoreFamilyContext';
+import { useIngredients } from '../../contexts/IngredientContext';
+import { generateRecipeWithDeepSeek, getApiKeyStatus } from '../../services/deepseekService';
 
 // Import existing categories and dietary restrictions
 const CUISINE_CATEGORIES = [
@@ -91,6 +94,7 @@ const CUISINE_TYPES = ['camerounaise', 'africaine', 'libanaise'];
 function AddRecipeDialog({ open, onClose, onSave }) {
   const { generateRecipeFromMealName, VISIBILITY_TYPES } = useRecipes();
   const { currentFamily } = useFamily();
+  const { ingredients: availableIngredients } = useIngredients();
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -124,6 +128,7 @@ function AddRecipeDialog({ open, onClose, onSave }) {
 
   const [errors, setErrors] = useState({});
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [showSuccessSnackbar, setShowSuccessSnackbar] = useState(false);
   const [newIngredient, setNewIngredient] = useState({
@@ -193,28 +198,50 @@ function AddRecipeDialog({ open, onClose, onSave }) {
     });
   };
 
-  const addIngredient = () => {
-    if (newIngredient.name.trim() && newIngredient.quantity && newIngredient.unit.trim()) {
-      const ingredient = {
-        name: newIngredient.name.trim(),
-        quantity: parseFloat(newIngredient.quantity),
-        unit: newIngredient.unit.trim(),
-        category: newIngredient.category || 'Autres'
+  const addIngredient = (ingredient) => {
+    // Handle both direct ingredient object (from EnhancedIngredientInput) and legacy format
+    let ingredientToAdd;
+
+    if (ingredient && typeof ingredient === 'object') {
+      // New format from EnhancedIngredientInput
+      ingredientToAdd = {
+        name: ingredient.name.trim(),
+        quantity: parseFloat(ingredient.quantity),
+        unit: ingredient.unit.trim(),
+        category: ingredient.category || 'Autres'
       };
-
-      setFormData({
-        ...formData,
-        ingredients: [...formData.ingredients, ingredient]
-      });
-      setNewIngredient({ name: '', quantity: '', unit: '', category: '' });
-
-      // Clear ingredients error if it exists
-      if (errors.ingredients) {
-        setErrors({
-          ...errors,
-          ingredients: ''
-        });
+    } else {
+      // Legacy format (fallback)
+      if (newIngredient.name.trim() && newIngredient.quantity && newIngredient.unit.trim()) {
+        ingredientToAdd = {
+          name: newIngredient.name.trim(),
+          quantity: parseFloat(newIngredient.quantity),
+          unit: newIngredient.unit.trim(),
+          category: newIngredient.category || 'Autres'
+        };
+      } else {
+        return; // Invalid ingredient data
       }
+    }
+
+    console.log('Adding ingredient to recipe:', ingredientToAdd); // Debug log
+
+    setFormData(prevFormData => ({
+      ...prevFormData,
+      ingredients: [...prevFormData.ingredients, ingredientToAdd]
+    }));
+
+    // Reset legacy form if used
+    if (!ingredient) {
+      setNewIngredient({ name: '', quantity: '', unit: '', category: '' });
+    }
+
+    // Clear ingredients error if it exists
+    if (errors.ingredients) {
+      setErrors(prevErrors => ({
+        ...prevErrors,
+        ingredients: ''
+      }));
     }
   };
 
@@ -272,14 +299,48 @@ function AddRecipeDialog({ open, onClose, onSave }) {
       return;
     }
 
+    // Check API key status
+    const apiStatus = getApiKeyStatus();
+    if (!apiStatus.configured) {
+      setSuccessMessage(
+        apiStatus.placeholder
+          ? 'Clé API DeepSeek non configurée. Veuillez configurer votre clé API dans src/services/deepseekService.js'
+          : 'Clé API DeepSeek invalide. Vérifiez votre configuration.'
+      );
+      setShowSuccessSnackbar(true);
+      return;
+    }
+
     setIsGenerating(true);
+    setSuccessMessage('');
+    setGenerationProgress('Connexion à l\'IA DeepSeek...');
 
     try {
-      // Simulate API call with 7-second delay
-      await new Promise(resolve => setTimeout(resolve, 7000));
+      // Add progress updates
+      setTimeout(() => setGenerationProgress('Analyse du nom de la recette...'), 1000);
+      setTimeout(() => setGenerationProgress('Génération des ingrédients...'), 2000);
+      setTimeout(() => setGenerationProgress('Création des instructions...'), 3000);
+      setTimeout(() => setGenerationProgress('Finalisation de la recette...'), 4000);
 
-      // Call the existing generateRecipeFromMealName function
-      const generatedRecipe = await generateRecipeFromMealName(formData.name);
+      // Build enhanced context for AI generation
+      const enhancedContext = {
+        dietaryPreferences: formData.categories,
+        cookingEquipment: ['casserole', 'poêle', 'four'], // Default equipment
+        skillLevel: formData.difficulty,
+        servings: parseInt(formData.servings) || 4,
+        maxPrepTime: formData.prepTime ? parseInt(formData.prepTime) + parseInt(formData.cookTime || 0) : null,
+        cuisineStyle: formData.cuisine,
+        cookingMethod: null, // Could be extracted from recipe name
+        familySize: currentFamily?.memberCount || null,
+        allergies: formData.dietaryInfo.allergens
+      };
+
+      // Use DeepSeek API for recipe generation with enhanced context
+      const generatedRecipe = await generateRecipeWithDeepSeek(
+        formData.name.trim(),
+        availableIngredients || [],
+        enhancedContext
+      );
 
       // Only populate empty fields - don't overwrite user input
       const updatedFormData = { ...formData };
@@ -304,6 +365,14 @@ function AddRecipeDialog({ open, onClose, onSave }) {
         updatedFormData.difficulty = generatedRecipe.difficulty;
       }
 
+      if (formData.cuisine === 'camerounaise') { // Only change if still default
+        updatedFormData.cuisine = generatedRecipe.cuisine;
+      }
+
+      if (formData.categories.length === 0) {
+        updatedFormData.categories = generatedRecipe.categories || [];
+      }
+
       if (formData.ingredients.length === 0) {
         updatedFormData.ingredients = generatedRecipe.ingredients;
       }
@@ -317,21 +386,46 @@ function AddRecipeDialog({ open, onClose, onSave }) {
       }
 
       if (!formData.nutrition.calories) {
-        updatedFormData.nutrition = generatedRecipe.nutrition;
+        updatedFormData.nutrition = {
+          calories: generatedRecipe.nutrition?.calories?.toString() || '',
+          protein: generatedRecipe.nutrition?.protein?.toString() || '',
+          carbs: generatedRecipe.nutrition?.carbs?.toString() || '',
+          fat: generatedRecipe.nutrition?.fat?.toString() || '',
+          fiber: generatedRecipe.nutrition?.fiber?.toString() || ''
+        };
       }
 
       setFormData(updatedFormData);
 
       // Show success message
-      setSuccessMessage('Recette générée avec succès !');
+      setSuccessMessage('Recette générée avec succès par l\'IA DeepSeek !');
       setShowSuccessSnackbar(true);
 
     } catch (error) {
-      console.error('Error generating recipe:', error);
-      setSuccessMessage('Erreur lors de la génération. Veuillez réessayer.');
+      console.error('Error generating recipe with DeepSeek:', error);
+
+      // Provide user-friendly error messages with more context
+      let errorMessage = 'Erreur lors de la génération. Veuillez réessayer.';
+
+      if (error.message.includes('Clé API')) {
+        errorMessage = error.message;
+      } else if (error.message.includes('connexion')) {
+        errorMessage = 'Erreur de connexion. Vérifiez votre connexion internet et réessayez.';
+      } else if (error.message.includes('limite') || error.message.includes('429')) {
+        errorMessage = 'Limite API atteinte. Veuillez patienter quelques minutes avant de réessayer.';
+      } else if (error.message.includes('JSON') || error.message.includes('format')) {
+        errorMessage = 'Erreur de format dans la réponse de l\'IA. Le système va automatiquement réessayer avec des paramètres optimisés.';
+      } else if (error.message.includes('tentatives')) {
+        errorMessage = 'Plusieurs tentatives ont échoué. Essayez avec un nom de recette plus simple ou vérifiez votre connexion.';
+      } else if (error.message.includes('401') || error.message.includes('403')) {
+        errorMessage = 'Problème d\'authentification API. Contactez l\'administrateur.';
+      }
+
+      setSuccessMessage(errorMessage);
       setShowSuccessSnackbar(true);
     } finally {
       setIsGenerating(false);
+      setGenerationProgress('');
     }
   };
 
@@ -464,6 +558,7 @@ function AddRecipeDialog({ open, onClose, onSave }) {
     });
     setErrors({});
     setIsGenerating(false);
+    setGenerationProgress('');
     setSuccessMessage('');
     setShowSuccessSnackbar(false);
     setNewIngredient({ name: '', quantity: '', unit: '', category: '' });
@@ -509,29 +604,45 @@ function AddRecipeDialog({ open, onClose, onSave }) {
             </Grid>
 
             <Grid item xs={12} md={2}>
-              <Button
-                variant="outlined"
-                startIcon={isGenerating ? <CircularProgress size={16} /> : <AutoAwesome />}
-                onClick={handleGenerateWithAI}
-                disabled={!formData.name.trim() || formData.name.trim().length < 3 || isGenerating}
-                fullWidth
-                sx={{
-                  height: '56px',
-                  background: 'linear-gradient(45deg, #9c27b0 30%, #e1bee7 90%)',
-                  color: 'white',
-                  border: 'none',
-                  '&:hover': {
-                    background: 'linear-gradient(45deg, #7b1fa2 30%, #ce93d8 90%)',
-                    border: 'none'
-                  },
-                  '&:disabled': {
-                    background: 'rgba(156, 39, 176, 0.3)',
-                    color: 'rgba(255, 255, 255, 0.5)'
-                  }
-                }}
-              >
-                {isGenerating ? 'Génération en cours...' : 'Générer avec IA'}
-              </Button>
+              <Box>
+                <Button
+                  variant="outlined"
+                  startIcon={isGenerating ? <CircularProgress size={16} /> : <AutoAwesome />}
+                  onClick={handleGenerateWithAI}
+                  disabled={!formData.name.trim() || formData.name.trim().length < 3 || isGenerating}
+                  fullWidth
+                  sx={{
+                    height: '56px',
+                    background: 'linear-gradient(45deg, #9c27b0 30%, #e1bee7 90%)',
+                    color: 'white',
+                    border: 'none',
+                    '&:hover': {
+                      background: 'linear-gradient(45deg, #7b1fa2 30%, #ce93d8 90%)',
+                      border: 'none'
+                    },
+                    '&:disabled': {
+                      background: 'rgba(156, 39, 176, 0.3)',
+                      color: 'rgba(255, 255, 255, 0.5)'
+                    }
+                  }}
+                >
+                  {isGenerating ? 'IA en cours...' : 'Générer avec IA'}
+                </Button>
+                {isGenerating && generationProgress && (
+                  <Typography
+                    variant="caption"
+                    display="block"
+                    sx={{
+                      mt: 0.5,
+                      textAlign: 'center',
+                      color: 'primary.main',
+                      fontSize: '0.7rem'
+                    }}
+                  >
+                    {generationProgress}
+                  </Typography>
+                )}
+              </Box>
             </Grid>
 
             <Grid item xs={12} md={12}>
@@ -800,8 +911,12 @@ function AddRecipeDialog({ open, onClose, onSave }) {
           />
 
           {/* Ingredients List */}
-          {formData.ingredients.length > 0 && (
+          {console.log('Current ingredients in formData:', formData.ingredients) /* Debug log */}
+          {formData.ingredients && formData.ingredients.length > 0 ? (
             <List sx={{ mb: 3, bgcolor: 'grey.50', borderRadius: 1 }}>
+              <Typography variant="subtitle2" sx={{ p: 2, pb: 0, fontWeight: 'bold' }}>
+                Ingrédients ajoutés ({formData.ingredients.length})
+              </Typography>
               {formData.ingredients.map((ingredient, index) => (
                 <ListItem key={index}>
                   <ListItemText
@@ -820,68 +935,31 @@ function AddRecipeDialog({ open, onClose, onSave }) {
                 </ListItem>
               ))}
             </List>
+          ) : (
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Aucun ingrédient ajouté. Utilisez le formulaire ci-dessus pour ajouter des ingrédients.
+            </Alert>
           )}
 
           <Divider sx={{ my: 3 }} />
 
-          {/* Instructions Section */}
-          <Typography variant="h6" gutterBottom>
-            Instructions
-          </Typography>
-
-          {errors.instructions && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {errors.instructions}
-            </Alert>
-          )}
-
-          {/* Add New Instruction */}
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item xs={12} sm={11}>
-              <TextField
-                fullWidth
-                multiline
-                rows={2}
-                label="Nouvelle instruction"
-                value={newInstruction}
-                onChange={(e) => setNewInstruction(e.target.value)}
-                placeholder="Décrivez une étape de la préparation (minimum 10 caractères)..."
-              />
-            </Grid>
-            <Grid item xs={12} sm={1}>
-              <Button
-                fullWidth
-                variant="outlined"
-                onClick={addInstruction}
-                sx={{ height: '80px' }}
-              >
-                <Add />
-              </Button>
-            </Grid>
-          </Grid>
-
-          {/* Instructions List */}
-          {formData.instructions.length > 0 && (
-            <List sx={{ mb: 3, bgcolor: 'grey.50', borderRadius: 1 }}>
-              {formData.instructions.map((instruction, index) => (
-                <ListItem key={index}>
-                  <ListItemText
-                    primary={`Étape ${index + 1}`}
-                    secondary={instruction}
-                  />
-                  <ListItemSecondaryAction>
-                    <IconButton
-                      edge="end"
-                      onClick={() => removeInstruction(index)}
-                      color="error"
-                    >
-                      <Delete />
-                    </IconButton>
-                  </ListItemSecondaryAction>
-                </ListItem>
-              ))}
-            </List>
-          )}
+          {/* Enhanced Instructions Section with Inline Editing */}
+          <EditableInstructionList
+            instructions={formData.instructions}
+            onInstructionsChange={(newInstructions) => {
+              setFormData({ ...formData, instructions: newInstructions });
+              // Clear instructions error if it exists
+              if (errors.instructions) {
+                setErrors({ ...errors, instructions: '' });
+              }
+            }}
+            newInstruction={newInstruction}
+            onNewInstructionChange={setNewInstruction}
+            onAddInstruction={addInstruction}
+            error={errors.instructions}
+            readOnly={false}
+            showAddForm={true}
+          />
 
           <Divider sx={{ my: 3 }} />
 

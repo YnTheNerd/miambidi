@@ -1,0 +1,224 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions for authentication and authorization
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isFamilyMember(familyId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+    }
+    
+    function isFamilyAdmin(familyId) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isValidUserData() {
+      return request.resource.data.keys().hasAll(['email', 'displayName', 'createdAt']) &&
+             request.resource.data.email is string &&
+             request.resource.data.displayName is string &&
+             request.resource.data.createdAt is timestamp;
+    }
+    
+    function isValidFamilyData() {
+      return request.resource.data.keys().hasAll(['name', 'createdBy', 'createdAt']) &&
+             request.resource.data.name is string &&
+             request.resource.data.createdBy is string &&
+             request.resource.data.createdAt is timestamp;
+    }
+    
+    function isValidRecipeData() {
+      return request.resource.data.keys().hasAll(['title', 'createdBy', 'createdAt']) &&
+             request.resource.data.title is string &&
+             request.resource.data.createdBy is string &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    // ===========================================
+    // USER PROFILES
+    // ===========================================
+    match /users/{userId} {
+      // Users can read and write their own profile
+      allow read, write: if isOwner(userId) && isValidUserData();
+      
+      // Family members can read basic profile info of other family members
+      allow read: if isAuthenticated() && 
+                     resource.data.familyId != null && 
+                     isFamilyMember(resource.data.familyId);
+    }
+
+    // ===========================================
+    // FAMILIES
+    // ===========================================
+    match /families/{familyId} {
+      // Family members can read family data
+      allow read: if isFamilyMember(familyId);
+      
+      // Only family admins can update family settings
+      allow write: if isFamilyAdmin(familyId) && isValidFamilyData();
+      
+      // Allow creation by authenticated users
+      allow create: if isAuthenticated() && 
+                       isOwner(resource.data.createdBy) && 
+                       isValidFamilyData();
+      
+      // Family member subcollection
+      match /members/{memberId} {
+        // Family members can read all member data
+        allow read: if isFamilyMember(familyId);
+        
+        // Users can write their own member data
+        allow write: if isOwner(memberId);
+        
+        // Family admins can manage all members
+        allow write: if isFamilyAdmin(familyId);
+      }
+    }
+
+    // ===========================================
+    // RECIPES
+    // ===========================================
+    match /recipes/{recipeId} {
+      // Public recipes can be read by anyone
+      allow read: if resource.data.visibility == 'public';
+      
+      // Private recipes can only be read by family members
+      allow read: if resource.data.visibility == 'private' && 
+                     isFamilyMember(resource.data.familyId);
+      
+      // Recipe creators can read their own recipes
+      allow read: if isOwner(resource.data.createdBy);
+      
+      // Authenticated users can create recipes
+      allow create: if isAuthenticated() && 
+                       isOwner(request.resource.data.createdBy) && 
+                       isValidRecipeData();
+      
+      // Recipe creators can update their own recipes
+      allow update: if isOwner(resource.data.createdBy) && isValidRecipeData();
+      
+      // Recipe creators and family admins can delete recipes
+      allow delete: if isOwner(resource.data.createdBy) || 
+                       (resource.data.familyId != null && isFamilyAdmin(resource.data.familyId));
+    }
+
+    // ===========================================
+    // MEAL PLANS
+    // ===========================================
+    match /mealPlans/{mealPlanId} {
+      // Family members can read meal plans
+      allow read: if isFamilyMember(resource.data.familyId);
+      
+      // Family members can create meal plans
+      allow create: if isAuthenticated() && 
+                       isFamilyMember(request.resource.data.familyId) &&
+                       request.resource.data.createdBy == request.auth.uid;
+      
+      // Family members can update meal plans
+      allow update: if isFamilyMember(resource.data.familyId);
+      
+      // Family admins and creators can delete meal plans
+      allow delete: if isOwner(resource.data.createdBy) || 
+                       isFamilyAdmin(resource.data.familyId);
+    }
+
+    // ===========================================
+    // SHOPPING LISTS
+    // ===========================================
+    match /shoppingLists/{listId} {
+      // Family members can read shopping lists
+      allow read: if isFamilyMember(resource.data.familyId);
+      
+      // Family members can create shopping lists
+      allow create: if isAuthenticated() && 
+                       isFamilyMember(request.resource.data.familyId) &&
+                       request.resource.data.createdBy == request.auth.uid;
+      
+      // Family members can update shopping lists (for checking off items)
+      allow update: if isFamilyMember(resource.data.familyId);
+      
+      // Family admins and creators can delete shopping lists
+      allow delete: if isOwner(resource.data.createdBy) || 
+                       isFamilyAdmin(resource.data.familyId);
+    }
+
+    // ===========================================
+    // USER PREFERENCES & SETTINGS
+    // ===========================================
+    match /userPreferences/{userId} {
+      // Users can only access their own preferences
+      allow read, write: if isOwner(userId);
+    }
+
+    // ===========================================
+    // NOTIFICATIONS
+    // ===========================================
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isOwner(resource.data.userId);
+      
+      // System can create notifications
+      allow create: if isAuthenticated();
+      
+      // Users can update their own notifications (mark as read)
+      allow update: if isOwner(resource.data.userId);
+      
+      // Users can delete their own notifications
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    // ===========================================
+    // RECIPE RATINGS & REVIEWS
+    // ===========================================
+    match /recipeReviews/{reviewId} {
+      // Anyone can read public recipe reviews
+      allow read: if true;
+      
+      // Authenticated users can create reviews
+      allow create: if isAuthenticated() && 
+                       isOwner(request.resource.data.userId);
+      
+      // Users can update their own reviews
+      allow update: if isOwner(resource.data.userId);
+      
+      // Users can delete their own reviews
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    // ===========================================
+    // SYSTEM COLLECTIONS (Admin only)
+    // ===========================================
+    match /systemConfig/{document=**} {
+      // Only allow reads for authenticated users
+      allow read: if isAuthenticated();
+      
+      // No writes allowed (admin only via server)
+      allow write: if false;
+    }
+
+    // ===========================================
+    // ANALYTICS & USAGE DATA
+    // ===========================================
+    match /analytics/{document=**} {
+      // No direct access to analytics data
+      allow read, write: if false;
+    }
+
+    // ===========================================
+    // DEFAULT DENY
+    // ===========================================
+    // Deny access to any other collections not explicitly defined
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

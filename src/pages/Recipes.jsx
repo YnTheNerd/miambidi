@@ -39,6 +39,7 @@ import RecipeDialog from '../components/recipes/RecipeDialog';
 import EditRecipeDialog from '../components/recipes/EditRecipeDialog';
 import AddRecipeDialog from '../components/recipes/AddRecipeDialog';
 import RecipeCardErrorBoundary from '../components/common/RecipeCardErrorBoundary';
+import DynamicRecipeGrid from '../components/recipes/DynamicRecipeGrid';
 
 // Import existing cuisine categories from EditMemberDialog
 const CUISINE_CATEGORIES = [
@@ -621,28 +622,26 @@ function Recipes() {
         )}
       </Box>
 
-      {/* Recipe Grid */}
-      <Grid container spacing={3}>
+      {/* Dynamic Recipe Grid - Masonry-style Layout */}
+      <DynamicRecipeGrid recipes={filteredRecipes}>
         {filteredRecipes.map((recipe) => (
-          <Grid item xs={12} sm={6} md={4} key={recipe.id}>
-            <RecipeCardErrorBoundary recipe={recipe}>
-              <RecipeCard
-                recipe={recipe}
-                currentUserId={currentUser?.id}
-                currentFamilyId={currentFamily?.id}
-                currentFamilyName={currentFamily?.name}
-                isAdmin={currentUser?.role === 'admin'}
-                onView={handleViewRecipe}
-                onEdit={handleEditRecipe}
-                onDelete={handleDeleteRecipe}
-                onShare={handleShareRecipe}
-                isFavorite={favorites.has(recipe.id)}
-                onToggleFavorite={handleToggleFavorite}
-              />
-            </RecipeCardErrorBoundary>
-          </Grid>
+          <RecipeCardErrorBoundary key={recipe.id} recipe={recipe}>
+            <RecipeCard
+              recipe={recipe}
+              currentUserId={currentUser?.id}
+              currentFamilyId={currentFamily?.id}
+              currentFamilyName={currentFamily?.name}
+              isAdmin={currentUser?.role === 'admin'}
+              onView={handleViewRecipe}
+              onEdit={handleEditRecipe}
+              onDelete={handleDeleteRecipe}
+              onShare={handleShareRecipe}
+              isFavorite={favorites.has(recipe.id)}
+              onToggleFavorite={handleToggleFavorite}
+            />
+          </RecipeCardErrorBoundary>
         ))}
-      </Grid>
+      </DynamicRecipeGrid>
 
       {/* Empty State */}
       {filteredRecipes.length === 0 && (

@@ -34,6 +34,7 @@ import {
 } from '@mui/icons-material';
 import ImageUpload from './ImageUpload';
 import EnhancedIngredientInput from './EnhancedIngredientInput';
+import EditableInstructionList from './EditableInstructionList';
 
 // Import existing categories and dietary restrictions
 const CUISINE_CATEGORIES = [
@@ -695,61 +696,23 @@ function EditRecipeDialog({ open, recipe, onClose, onSave }) {
 
           <Divider sx={{ my: 3 }} />
 
-          {/* Instructions Section */}
-          <Typography variant="h6" gutterBottom>
-            Instructions
-          </Typography>
-
-          {errors.instructions && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {errors.instructions}
-            </Alert>
-          )}
-
-          {/* Add New Instruction */}
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item xs={12} sm={11}>
-              <TextField
-                fullWidth
-                multiline
-                rows={2}
-                label="Nouvelle instruction"
-                value={newInstruction}
-                onChange={(e) => setNewInstruction(e.target.value)}
-              />
-            </Grid>
-            <Grid item xs={12} sm={1}>
-              <Button
-                fullWidth
-                variant="outlined"
-                onClick={addInstruction}
-                sx={{ height: '80px' }}
-              >
-                <Add />
-              </Button>
-            </Grid>
-          </Grid>
-
-          {/* Instructions List */}
-          <List sx={{ mb: 3, bgcolor: 'grey.50', borderRadius: 1 }}>
-            {formData.instructions.map((instruction, index) => (
-              <ListItem key={index}>
-                <ListItemText
-                  primary={`Étape ${index + 1}`}
-                  secondary={instruction}
-                />
-                <ListItemSecondaryAction>
-                  <IconButton
-                    edge="end"
-                    onClick={() => removeInstruction(index)}
-                    color="error"
-                  >
-                    <Delete />
-                  </IconButton>
-                </ListItemSecondaryAction>
-              </ListItem>
-            ))}
-          </List>
+          {/* Enhanced Instructions Section with Inline Editing */}
+          <EditableInstructionList
+            instructions={formData.instructions}
+            onInstructionsChange={(newInstructions) => {
+              setFormData({ ...formData, instructions: newInstructions });
+              // Clear instructions error if it exists
+              if (errors.instructions) {
+                setErrors({ ...errors, instructions: '' });
+              }
+            }}
+            newInstruction={newInstruction}
+            onNewInstructionChange={setNewInstruction}
+            onAddInstruction={addInstruction}
+            error={errors.instructions}
+            readOnly={false}
+            showAddForm={true}
+          />
 
           <Divider sx={{ my: 3 }} />
 

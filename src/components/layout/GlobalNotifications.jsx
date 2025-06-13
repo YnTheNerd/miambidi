@@ -102,17 +102,19 @@ function GlobalNotifications() {
 
       {/* Refresh Button */}
       <Tooltip title="Actualiser la page">
-        <IconButton
-          onClick={handleRefresh}
-          disabled={loading}
-          sx={{
-            '&:hover': {
-              backgroundColor: 'rgba(0, 0, 0, 0.04)'
-            }
-          }}
-        >
-          <Refresh />
-        </IconButton>
+        <Box component="span">
+          <IconButton
+            onClick={handleRefresh}
+            disabled={loading}
+            sx={{
+              '&:hover': {
+                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+              }
+            }}
+          >
+            <Refresh />
+          </IconButton>
+        </Box>
       </Tooltip>
 
       {/* Notification Menu */}
@@ -158,98 +160,92 @@ function GlobalNotifications() {
         )}
 
         {/* Expired Items */}
-        {expiredItems.length > 0 && (
-          <>
-            <Box sx={{ p: 2, bgcolor: 'error.light', color: 'error.contrastText' }}>
-              <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Error />
-                Ingrédients Expirés ({expiredItems.length})
-              </Typography>
-            </Box>
-            <List dense>
-              {expiredItems.slice(0, 5).map((item) => (
-                <ListItem key={item.id}>
-                  <ListItemIcon>
-                    <Error color="error" />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={item.ingredientName}
-                    secondary={formatExpirationMessage(item)}
-                  />
-                </ListItem>
-              ))}
-              {expiredItems.length > 5 && (
-                <ListItem>
-                  <ListItemText
-                    primary={`... et ${expiredItems.length - 5} autre(s)`}
-                    sx={{ textAlign: 'center', fontStyle: 'italic' }}
-                  />
-                </ListItem>
-              )}
-            </List>
-            <Divider />
-          </>
-        )}
+        {expiredItems.length > 0 && [
+          <Box key="expired-header" sx={{ p: 2, bgcolor: 'error.light', color: 'error.contrastText' }}>
+            <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Error />
+              Ingrédients Expirés ({expiredItems.length})
+            </Typography>
+          </Box>,
+          <List key="expired-list" dense>
+            {expiredItems.slice(0, 5).map((item) => (
+              <ListItem key={item.id}>
+                <ListItemIcon>
+                  <Error color="error" />
+                </ListItemIcon>
+                <ListItemText
+                  primary={item.ingredientName}
+                  secondary={formatExpirationMessage(item)}
+                />
+              </ListItem>
+            ))}
+            {expiredItems.length > 5 && (
+              <ListItem>
+                <ListItemText
+                  primary={`... et ${expiredItems.length - 5} autre(s)`}
+                  sx={{ textAlign: 'center', fontStyle: 'italic' }}
+                />
+              </ListItem>
+            )}
+          </List>,
+          <Divider key="expired-divider" />
+        ]}
 
         {/* Expiring Items */}
-        {expiringItems.length > 0 && (
-          <>
-            <Box sx={{ p: 2, bgcolor: 'warning.light', color: 'warning.contrastText' }}>
-              <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Warning />
-                Bientôt Expirés ({expiringItems.length})
-              </Typography>
-            </Box>
-            <List dense>
-              {expiringItems.slice(0, 5).map((item) => (
-                <ListItem key={item.id}>
-                  <ListItemIcon>
-                    <Schedule color="warning" />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={item.ingredientName}
-                    secondary={formatExpirationMessage(item)}
-                  />
-                </ListItem>
-              ))}
-              {expiringItems.length > 5 && (
-                <ListItem>
-                  <ListItemText
-                    primary={`... et ${expiringItems.length - 5} autre(s)`}
-                    sx={{ textAlign: 'center', fontStyle: 'italic' }}
-                  />
-                </ListItem>
-              )}
-            </List>
-          </>
-        )}
+        {expiringItems.length > 0 && [
+          <Box key="expiring-header" sx={{ p: 2, bgcolor: 'warning.light', color: 'warning.contrastText' }}>
+            <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Warning />
+              Bientôt Expirés ({expiringItems.length})
+            </Typography>
+          </Box>,
+          <List key="expiring-list" dense>
+            {expiringItems.slice(0, 5).map((item) => (
+              <ListItem key={item.id}>
+                <ListItemIcon>
+                  <Schedule color="warning" />
+                </ListItemIcon>
+                <ListItemText
+                  primary={item.ingredientName}
+                  secondary={formatExpirationMessage(item)}
+                />
+              </ListItem>
+            ))}
+            {expiringItems.length > 5 && (
+              <ListItem>
+                <ListItemText
+                  primary={`... et ${expiringItems.length - 5} autre(s)`}
+                  sx={{ textAlign: 'center', fontStyle: 'italic' }}
+                />
+              </ListItem>
+            )}
+          </List>
+        ]}
 
         {/* Action Buttons */}
-        {notificationCount > 0 && (
-          <>
-            <Divider />
-            <Box sx={{ p: 2, display: 'flex', gap: 1, justifyContent: 'space-between' }}>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => {
-                  window.location.href = '/garde-manger';
-                  handleNotificationClose();
-                }}
-                startIcon={<Kitchen />}
-              >
-                Voir Garde-Manger
-              </Button>
-              <Button
-                variant="text"
-                size="small"
-                onClick={handleNotificationClose}
-              >
-                Fermer
-              </Button>
-            </Box>
-          </>
-        )}
+        {notificationCount > 0 && [
+          <Divider key="action-divider" />,
+          <Box key="action-buttons" sx={{ p: 2, display: 'flex', gap: 1, justifyContent: 'space-between' }}>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => {
+                window.location.href = '/garde-manger';
+                handleNotificationClose();
+              }}
+              startIcon={<Kitchen />}
+            >
+              Voir Garde-Manger
+            </Button>
+            <Button
+              variant="text"
+              size="small"
+              onClick={handleNotificationClose}
+            >
+              Fermer
+            </Button>
+          </Box>
+        ]}
       </Menu>
     </Box>
   );

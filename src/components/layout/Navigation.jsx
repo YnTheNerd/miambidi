@@ -29,18 +29,24 @@ import {
   Kitchen,
   ShoppingCart,
   Group,
-  Dashboard
+  Dashboard,
+  Article,
+  Store
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useFamily } from '../../contexts/FirestoreFamilyContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSeller } from '../../contexts/SellerContext';
 import GlobalNotifications from './GlobalNotifications';
+import SellerRegistration from '../seller/SellerRegistration';
 
 function Navigation() {
   const [anchorEl, setAnchorEl] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sellerRegistrationOpen, setSellerRegistrationOpen] = useState(false);
   const { currentUser, logout } = useAuth();
   const { family } = useFamily();
+  const { isSeller } = useSeller();
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -50,10 +56,12 @@ function Navigation() {
     { text: 'Tableau de Bord', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Calendrier Repas', icon: <CalendarMonth />, path: '/calendar' },
     { text: 'Recettes', icon: <MenuBook />, path: '/recipes' },
+    { text: 'Blog', icon: <Article />, path: '/blog' },
     { text: 'Ingrédients', icon: <Restaurant />, path: '/ingredients' },
     { text: 'Garde-Manger', icon: <Kitchen />, path: '/garde-manger' },
     { text: 'Liste de Courses', icon: <ShoppingCart />, path: '/liste-courses' },
-    { text: 'Famille', icon: <Group />, path: '/family' }
+    { text: 'Famille', icon: <Group />, path: '/family' },
+    ...(isSeller ? [{ text: 'Tableau Vendeur', icon: <Store />, path: '/seller-dashboard' }] : [])
   ];
 
   const handleProfileMenuOpen = (event) => {
@@ -250,6 +258,16 @@ function Navigation() {
           </ListItemIcon>
           Profile & Settings
         </MenuItem>
+
+        {!isSeller && (
+          <MenuItem onClick={() => { setSellerRegistrationOpen(true); handleMenuClose(); }}>
+            <ListItemIcon>
+              <Store fontSize="small" />
+            </ListItemIcon>
+            Devenir vendeur
+          </MenuItem>
+        )}
+
         <MenuItem onClick={handleLogout}>
           <ListItemIcon>
             <Logout fontSize="small" />
@@ -257,6 +275,16 @@ function Navigation() {
           Logout
         </MenuItem>
       </Menu>
+
+      {/* Seller Registration Dialog */}
+      <SellerRegistration
+        open={sellerRegistrationOpen}
+        onClose={() => setSellerRegistrationOpen(false)}
+        onSuccess={() => {
+          setSellerRegistrationOpen(false);
+          navigate('/seller-dashboard');
+        }}
+      />
     </>
   );
 }

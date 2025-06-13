@@ -23,7 +23,13 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TableRow
+  TableRow,
+  CircularProgress,
+  Alert,
+  Snackbar,
+  TextField,
+  Menu,
+  MenuItem
 } from '@mui/material';
 import {
   Close,
@@ -37,8 +43,14 @@ import {
   Share,
   Edit,
   ShoppingCart,
-  Print
+  Print,
+  Email,
+  PictureAsPdf,
+  Download
 } from '@mui/icons-material';
+import { generateRecipePDF, downloadRecipePDF } from '../../services/pdfService';
+import { shareRecipeWithPDF, validateEmailAddresses } from '../../services/recipeEmailService';
+import { useFamily } from '../../contexts/FirestoreFamilyContext';
 
 function RecipeDialog({
   open,
@@ -52,6 +64,18 @@ function RecipeDialog({
 }) {
   const [checkedIngredients, setCheckedIngredients] = useState(new Set());
   const [checkedInstructions, setCheckedInstructions] = useState(new Set());
+
+  // PDF and Email sharing states
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareMenuAnchor, setShareMenuAnchor] = useState(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailAddresses, setEmailAddresses] = useState('');
+  const [shareMessage, setShareMessage] = useState(null);
+  const [shareProgress, setShareProgress] = useState('');
+
+  // Get family context for email sharing and admin permissions
+  const { currentFamily, familyMembers, currentUser } = useFamily();
 
   if (!recipe) return null;
 
@@ -104,6 +128,130 @@ function RecipeDialog({
     if (dietaryInfo.isDairyFree) info.push('Sans Produits Laitiers');
     if (dietaryInfo.containsNuts) info.push('Contient des Noix');
     return info;
+  };
+
+  // PDF Generation Handler
+  const handlePrintRecipe = async () => {
+    if (!recipe) return;
+
+    setPdfLoading(true);
+    setShareProgress('Génération du PDF...');
+
+    try {
+      const pdfResult = await generateRecipePDF(recipe);
+
+      if (pdfResult.success) {
+        const downloadResult = downloadRecipePDF(pdfResult);
+
+        if (downloadResult.success) {
+          setShareMessage({
+            type: 'success',
+            text: `PDF "${pdfResult.filename}" téléchargé avec succès !`
+          });
+        } else {
+          setShareMessage({
+            type: 'error',
+            text: downloadResult.message
+          });
+        }
+      } else {
+        setShareMessage({
+          type: 'error',
+          text: 'Erreur lors de la génération du PDF'
+        });
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      setShareMessage({
+        type: 'error',
+        text: `Erreur: ${error.message}`
+      });
+    } finally {
+      setPdfLoading(false);
+      setShareProgress('');
+    }
+  };
+
+  // Share Menu Handlers
+  const handleShareMenuOpen = (event) => {
+    setShareMenuAnchor(event.currentTarget);
+  };
+
+  const handleShareMenuClose = () => {
+    setShareMenuAnchor(null);
+  };
+
+  // Email Sharing Handler
+  const handleEmailShare = async () => {
+    if (!emailAddresses.trim()) {
+      setShareMessage({
+        type: 'error',
+        text: 'Veuillez entrer au moins une adresse email'
+      });
+      return;
+    }
+
+    const emails = emailAddresses.split(',').map(email => email.trim());
+    const validation = validateEmailAddresses(emails);
+
+    if (!validation.isValid) {
+      setShareMessage({
+        type: 'error',
+        text: `Adresses email invalides: ${validation.invalidEmails.join(', ')}`
+      });
+      return;
+    }
+
+    setShareLoading(true);
+    setEmailDialogOpen(false);
+    setShareProgress('Génération du PDF et de l\'email...');
+
+    try {
+      const familyData = currentFamily ? {
+        name: currentFamily.name,
+        id: currentFamily.id
+      } : null;
+
+      const result = await shareRecipeWithPDF(recipe, validation.validEmails, familyData);
+
+      if (result.success) {
+        setShareMessage({
+          type: 'success',
+          text: result.message
+        });
+      } else {
+        setShareMessage({
+          type: 'error',
+          text: result.message
+        });
+      }
+    } catch (error) {
+      console.error('Error sharing recipe:', error);
+      setShareMessage({
+        type: 'error',
+        text: `Erreur lors du partage: ${error.message}`
+      });
+    } finally {
+      setShareLoading(false);
+      setShareProgress('');
+    }
+  };
+
+  // Get family member emails for quick selection
+  const getFamilyEmails = () => {
+    if (!familyMembers || familyMembers.length === 0) return [];
+    return familyMembers
+      .filter(member => member.email && member.uid !== currentUserId)
+      .map(member => member.email);
+  };
+
+  const handleQuickEmailSelect = () => {
+    const familyEmails = getFamilyEmails();
+    if (familyEmails.length > 0) {
+      setEmailAddresses(familyEmails.join(', '));
+    }
+    setEmailDialogOpen(true);
+    handleShareMenuClose();
   };
 
   return (
@@ -404,28 +552,142 @@ function RecipeDialog({
           - Integrates with RecipeContext.planMealForDate()
         */}
 
-        <Button startIcon={<Share />}>
+        <Button
+          startIcon={<Share />}
+          onClick={handleShareMenuOpen}
+          disabled={shareLoading}
+        >
           Partager
         </Button>
 
-        <Button startIcon={<Print />}>
-          Imprimer
+        <Button
+          startIcon={pdfLoading ? <CircularProgress size={16} /> : <Print />}
+          onClick={handlePrintRecipe}
+          disabled={pdfLoading || shareLoading}
+        >
+          {pdfLoading ? 'Génération...' : 'Imprimer'}
         </Button>
 
-        {currentUserId === recipe.createdBy && (
-          <Button
-            variant="outlined"
-            startIcon={<Edit />}
-            onClick={() => onEdit(recipe)}
-          >
-            Modifier
-          </Button>
-        )}
+        {(() => {
+          const isCreator = currentUserId === recipe.createdBy;
+          const canEditByOwnership = recipe.ownership?.canEdit?.includes(currentUserId) || false;
+
+          // Get admin status from family context
+          const isAdmin = currentUser?.role === 'admin';
+          const currentFamilyId = currentFamily?.id;
+
+          // NEW: Family admins can edit ANY recipe created by their family members
+          const canEditAsAdmin = isAdmin && currentFamilyId && (
+            (recipe.familyId === currentFamilyId) ||
+            (recipe.visibility === 'public' && isAdmin)
+          );
+
+          // MiamBidi Requirements: Family admins can edit ALL recipes (including private imported ones)
+          const canEdit = isCreator || canEditByOwnership || canEditAsAdmin;
+
+          return canEdit ? (
+            <Button
+              variant="outlined"
+              startIcon={<Edit />}
+              onClick={() => onEdit(recipe)}
+            >
+              Modifier
+            </Button>
+          ) : null;
+        })()}
 
         <Button onClick={onClose}>
           Fermer
         </Button>
       </DialogActions>
+
+      {/* Share Menu */}
+      <Menu
+        anchorEl={shareMenuAnchor}
+        open={Boolean(shareMenuAnchor)}
+        onClose={handleShareMenuClose}
+      >
+        <MenuItem onClick={handleQuickEmailSelect}>
+          <Email sx={{ mr: 1 }} />
+          Partager par Email
+        </MenuItem>
+        <MenuItem onClick={() => { setEmailDialogOpen(true); handleShareMenuClose(); }}>
+          <Email sx={{ mr: 1 }} />
+          Email Personnalisé
+        </MenuItem>
+        <MenuItem onClick={handlePrintRecipe}>
+          <PictureAsPdf sx={{ mr: 1 }} />
+          Télécharger PDF
+        </MenuItem>
+      </Menu>
+
+      {/* Email Dialog */}
+      <Dialog open={emailDialogOpen} onClose={() => setEmailDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Partager la Recette par Email</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Entrez les adresses email séparées par des virgules
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            rows={3}
+            label="Adresses Email"
+            value={emailAddresses}
+            onChange={(e) => setEmailAddresses(e.target.value)}
+            placeholder="exemple@email.com, autre@email.com"
+            helperText={`${getFamilyEmails().length} membre(s) de famille disponible(s)`}
+          />
+          {getFamilyEmails().length > 0 && (
+            <Button
+              size="small"
+              onClick={() => setEmailAddresses(getFamilyEmails().join(', '))}
+              sx={{ mt: 1 }}
+            >
+              Utiliser les emails de la famille
+            </Button>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEmailDialogOpen(false)}>
+            Annuler
+          </Button>
+          <Button
+            onClick={handleEmailShare}
+            variant="contained"
+            disabled={!emailAddresses.trim() || shareLoading}
+            startIcon={shareLoading ? <CircularProgress size={16} /> : <Email />}
+          >
+            {shareLoading ? 'Envoi...' : 'Partager'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Progress and Messages */}
+      {shareProgress && (
+        <Box sx={{ position: 'fixed', bottom: 16, left: 16, zIndex: 9999 }}>
+          <Alert severity="info" sx={{ display: 'flex', alignItems: 'center' }}>
+            <CircularProgress size={16} sx={{ mr: 1 }} />
+            {shareProgress}
+          </Alert>
+        </Box>
+      )}
+
+      {/* Share Messages */}
+      <Snackbar
+        open={Boolean(shareMessage)}
+        autoHideDuration={6000}
+        onClose={() => setShareMessage(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setShareMessage(null)}
+          severity={shareMessage?.type || 'info'}
+          sx={{ width: '100%' }}
+        >
+          {shareMessage?.text}
+        </Alert>
+      </Snackbar>
     </Dialog>
   );
 }

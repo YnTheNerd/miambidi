@@ -92,7 +92,8 @@ export const UNIT_CONVERSIONS = {
   // Volume conversions (to milliliters)
   volume: {
     'ml': 1,
-    'L': 1000,
+    'l': 1000,  // lowercase for consistency
+    'L': 1000,  // uppercase for backward compatibility
     'cl': 10,
     'dl': 100
   },

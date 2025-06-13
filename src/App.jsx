@@ -1,10 +1,16 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { CircularProgress, Box } from '@mui/material';
 import AppProviders from './providers/AppProviders';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import AppLayout from './components/layout/AppLayout';
 import RecipeSeeder from './components/debug/RecipeSeeder';
+import BlogFunctionalityTest from './components/debug/BlogFunctionalityTest';
+import BlogRouteHandler from './components/blog/BlogRouteHandler';
+import BlogErrorBoundary from './components/common/BlogErrorBoundary';
+import DemoDataManager from './components/admin/DemoDataManager';
+import GoogleMapsTest from './components/maps/GoogleMapsTest';
+import { installDevToolsErrorHandlers } from './utils/devToolsErrorHandler.jsx';
 import {
   LandingPage,
   AuthPage,
@@ -15,6 +21,7 @@ import {
   ShoppingList,
   FamilyManagement,
   DragDropMealCalendar,
+  Blog,
   FirebaseTest,
   AuthFlowTest,
   FamilyTest,
@@ -24,7 +31,8 @@ import {
   QuickIngredientTest,
   IngredientSaveDebug,
   FamilyRecipeDebug,
-  RecipeTest
+  RecipeTest,
+  SellerDashboard
 } from './components/routing/LazyRoutes';
 
 // Loading component for Suspense fallback
@@ -45,6 +53,11 @@ const LoadingFallback = () => (
 );
 
 function App() {
+  // Install global DevTools error handlers on app initialization
+  useEffect(() => {
+    installDevToolsErrorHandlers();
+  }, []);
+
   return (
     <AppProviders>
       <Router>
@@ -58,7 +71,13 @@ function App() {
               </ProtectedRoute>
             } />
             <Route path="/recettes-publiques" element={<div>Public Recipes (Coming Soon)</div>} />
-            <Route path="/blogs" element={<div>Blog (Coming Soon)</div>} />
+            <Route path="/blogs" element={
+              <BlogErrorBoundary>
+                <React.Suspense fallback={<LoadingFallback />}>
+                  <BlogRouteHandler maxArticles={20} showHeader={true} />
+                </React.Suspense>
+              </BlogErrorBoundary>
+            } />
 
             {/* Development/Admin Routes - Only accessible in development */}
             {process.env.NODE_ENV === 'development' && (
@@ -86,6 +105,21 @@ function App() {
                 <Route path="/quick-ingredient-test" element={<QuickIngredientTest />} />
                 <Route path="/ingredient-save-debug" element={<IngredientSaveDebug />} />
                 <Route path="/family-recipe-debug" element={<FamilyRecipeDebug />} />
+                <Route path="/blog-test" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <BlogFunctionalityTest />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/demo-data" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <DemoDataManager />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/maps-test" element={<GoogleMapsTest />} />
               </>
             )}
 
@@ -142,6 +176,22 @@ function App() {
               <ProtectedRoute>
                 <AppLayout>
                   <FamilyManagement />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/blog" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Blog />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/seller-dashboard" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <SellerDashboard />
                 </AppLayout>
               </ProtectedRoute>
             } />

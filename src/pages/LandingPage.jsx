@@ -30,6 +30,7 @@ import {
   Public
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import PublicBlogSection from '../components/blog/PublicBlogSection';
 
 function LandingPage() {
   const navigate = useNavigate();
@@ -308,6 +309,9 @@ function LandingPage() {
           </Grid>
         </Container>
       </Box>
+
+      {/* Public Blog Section */}
+      <PublicBlogSection maxArticles={6} showHeader={true} />
 
       {/* CTA Section */}
       <Box sx={{ py: 8, textAlign: 'center' }}>

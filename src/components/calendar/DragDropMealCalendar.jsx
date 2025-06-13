@@ -15,6 +15,14 @@ import {
   Tooltip,
   CircularProgress,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
   ChevronLeft,
@@ -25,6 +33,9 @@ import {
   CalendarMonth,
   Delete,
   Warning,
+  GetApp,
+  PictureAsPdf,
+  FileDownload,
 } from '@mui/icons-material';
 import {
   DndContext,
@@ -135,7 +146,7 @@ function MealSlot({ day, mealType, plannedMeal, onRemoveMeal, familyConflicts })
       ref={setNodeRef}
       elevation={isOver ? 4 : plannedMeal ? 2 : 1}
       sx={{
-        height: { xs: '100px', sm: '110px' },
+        height: { xs: '120px', sm: '130px' },
         p: { xs: 1, sm: 1.5 },
         border: isOver
           ? '2px dashed #1976d2'
@@ -180,9 +191,9 @@ function MealSlot({ day, mealType, plannedMeal, onRemoveMeal, familyConflicts })
             mb: 0.5
           }}>
             <Avatar
-              src={plannedMeal.recipe.image || '/images/recipes/default-meal.jpg'}
+              src={plannedMeal.recipe.imageUrl || plannedMeal.recipe.image || '/images/recipes/default-meal.jpg'}
               alt={plannedMeal.recipe.name}
-              sx={{ width: 20, height: 20 }}
+              sx={{ width: 24, height: 24 }}
             >
               <Restaurant fontSize="small" />
             </Avatar>
@@ -219,22 +230,45 @@ function MealSlot({ day, mealType, plannedMeal, onRemoveMeal, familyConflicts })
               flex: 1,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
+              mb: 0.5
             }}
           >
             {plannedMeal.recipe.name}
           </Typography>
 
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{
-              textAlign: 'center',
-              fontSize: '0.7rem'
-            }}
-          >
-            {plannedMeal.recipe.prepTime + plannedMeal.recipe.cookTime} min
-          </Typography>
+          <Box sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            width: '100%'
+          }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{
+                fontSize: '0.65rem',
+                fontWeight: 500
+              }}
+            >
+              {plannedMeal.recipe.prepTime + plannedMeal.recipe.cookTime} min
+            </Typography>
+
+            <Typography
+              variant="caption"
+              color="primary.main"
+              sx={{
+                fontSize: '0.65rem',
+                fontWeight: 'bold',
+                bgcolor: 'primary.50',
+                px: 0.5,
+                py: 0.25,
+                borderRadius: 0.5
+              }}
+            >
+              {plannedMeal.recipe.servings} portions
+            </Typography>
+          </Box>
         </Box>
       ) : (
         <Box sx={{
@@ -278,6 +312,7 @@ function DragDropMealCalendar() {
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeId, setActiveId] = useState(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   // Combined loading and error states
   const isLoading = recipesLoading || familyLoading;
@@ -339,9 +374,13 @@ function DragDropMealCalendar() {
     );
   }
 
-  // Drag and drop sensors
+  // Drag and drop sensors with improved configuration
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before drag starts
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -401,6 +440,122 @@ function DragDropMealCalendar() {
   // Navigate weeks
   const navigateWeek = (direction) => {
     contextNavigateWeek(direction);
+  };
+
+  // Export functionality
+  const generateCalendarContent = () => {
+    const weekStart = weekDates[0];
+    const weekEnd = weekDates[6];
+
+    let content = '';
+    content += `═══════════════════════════════════════\n`;
+    content += `        PLANNING REPAS MIAMBIDI\n`;
+    content += `═══════════════════════════════════════\n\n`;
+
+    content += `📅 Semaine du ${weekStart.toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    })} au ${weekEnd.toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    })}\n`;
+
+    content += `👨‍👩‍👧‍👦 Famille: ${familyMembers?.[0]?.displayName || 'Votre Famille'}\n`;
+    content += `📧 Exporté le: ${new Date().toLocaleDateString('fr-FR')}\n\n`;
+
+    // Add meals for each day
+    weekDates.forEach((date, dayIndex) => {
+      const dayName = FRENCH_DAYS[dayIndex];
+      content += `\n🗓️  ${dayName.toUpperCase()} - ${date.toLocaleDateString('fr-FR')}\n`;
+      content += `${'─'.repeat(50)}\n`;
+
+      let dayHasMeals = false;
+      MEAL_TYPES.forEach((mealType) => {
+        const dateKey = `${date.toDateString()}-${mealType}`;
+        const plannedMeal = mealPlan[dateKey];
+
+        if (plannedMeal) {
+          dayHasMeals = true;
+          const mealIcon = mealType === 'Petit-déjeuner' ? '🌅' :
+                          mealType === 'Déjeuner' ? '🌞' : '🌙';
+
+          content += `${mealIcon} ${mealType}:\n`;
+          content += `   📖 ${plannedMeal.recipe.name}\n`;
+          content += `   ⏱️  ${plannedMeal.recipe.prepTime + plannedMeal.recipe.cookTime} minutes\n`;
+          content += `   👥 ${plannedMeal.recipe.servings} portions\n`;
+          content += `   🏷️  ${plannedMeal.recipe.difficulty}\n\n`;
+        }
+      });
+
+      if (!dayHasMeals) {
+        content += `   Aucun repas planifié\n\n`;
+      }
+    });
+
+    content += `\n═══════════════════════════════════════\n`;
+    content += `🍽️ Bon appétit et bonne planification !\n\n`;
+    content += `---\n`;
+    content += `Ce planning a été généré automatiquement par MiamBidi\n`;
+    content += `Application de planification de repas pour familles\n`;
+    content += `💚 Mangez bien, planifiez mieux !\n`;
+
+    return content;
+  };
+
+  const handleExportText = () => {
+    const content = generateCalendarContent();
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `planning-repas-${weekDates[0].toISOString().split('T')[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportPDF = () => {
+    // For now, we'll create a print-friendly version
+    // In a real implementation, you'd use a library like jsPDF or react-pdf
+    const content = generateCalendarContent();
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Planning Repas - MiamBidi</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              margin: 20px;
+              line-height: 1.6;
+            }
+            h1 {
+              color: #2E7D32;
+              text-align: center;
+            }
+            pre {
+              white-space: pre-wrap;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+            }
+            @media print {
+              body { margin: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="no-print" style="text-align: center; margin-bottom: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; background: #2E7D32; color: white; border: none; border-radius: 5px; cursor: pointer;">
+              Imprimer / Sauvegarder en PDF
+            </button>
+          </div>
+          <pre>${content}</pre>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   return (
@@ -503,17 +658,19 @@ function DragDropMealCalendar() {
           }}>
             {/* Calendar Header */}
             <Paper elevation={1} sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                {!drawerOpen && (
-                  <Button
-                    variant="outlined"
-                    startIcon={<Restaurant />}
-                    onClick={() => setDrawerOpen(true)}
-                    size="small"
-                  >
-                    Recettes
-                  </Button>
-                )}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {!drawerOpen && (
+                    <Button
+                      variant="outlined"
+                      startIcon={<Restaurant />}
+                      onClick={() => setDrawerOpen(true)}
+                      size="small"
+                    >
+                      Recettes
+                    </Button>
+                  )}
+                </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <IconButton onClick={() => navigateWeek(-1)}>
@@ -533,14 +690,38 @@ function DragDropMealCalendar() {
                   </IconButton>
                 </Box>
 
-                <Button
-                  variant="outlined"
-                  startIcon={<CalendarMonth />}
-                  onClick={() => updateCurrentWeek(new Date())}
-                  size="small"
-                >
-                  Aujourd'hui
-                </Button>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Button
+                    variant="contained"
+                    startIcon={<GetApp />}
+                    onClick={() => setExportDialogOpen(true)}
+                    size="small"
+                    sx={{
+                      bgcolor: 'success.main',
+                      '&:hover': { bgcolor: 'success.dark' }
+                    }}
+                  >
+                    Télécharger
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    startIcon={<PictureAsPdf />}
+                    onClick={handleExportPDF}
+                    size="small"
+                  >
+                    Exporter simple
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    startIcon={<CalendarMonth />}
+                    onClick={() => updateCurrentWeek(new Date())}
+                    size="small"
+                  >
+                    Aujourd'hui
+                  </Button>
+                </Box>
               </Box>
             </Paper>
 
@@ -611,14 +792,129 @@ function DragDropMealCalendar() {
         </Box>
 
         {/* Drag Overlay */}
-        <DragOverlay>
+        <DragOverlay
+          dropAnimation={null}
+          style={{
+            cursor: 'grabbing',
+            zIndex: 9999,
+          }}
+        >
           {activeId ? (
-            <DraggableRecipe
-              recipe={allRecipes.find(r => r.id === activeId)}
-            />
+            <Card
+              sx={{
+                cursor: 'grabbing',
+                boxShadow: 6,
+                transform: 'rotate(3deg)', // Slight rotation for visual feedback
+                opacity: 0.95,
+                userSelect: 'none',
+                bgcolor: 'background.paper',
+                border: '2px solid',
+                borderColor: 'primary.main',
+                width: 300, // Fixed width for consistent drag preview
+                zIndex: 9999,
+                pointerEvents: 'none', // Prevent interference with drop detection
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', p: 1 }}>
+                <Avatar
+                  src={allRecipes.find(r => r.id === activeId)?.imageUrl ||
+                       allRecipes.find(r => r.id === activeId)?.image ||
+                       '/images/recipes/default-meal.jpg'}
+                  alt={allRecipes.find(r => r.id === activeId)?.name}
+                  sx={{ width: 40, height: 40, mr: 2 }}
+                >
+                  <Restaurant />
+                </Avatar>
+                <Box sx={{ flexGrow: 1 }}>
+                  <Typography variant="body2" fontWeight="bold">
+                    {allRecipes.find(r => r.id === activeId)?.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {(allRecipes.find(r => r.id === activeId)?.prepTime || 0) +
+                     (allRecipes.find(r => r.id === activeId)?.cookTime || 0)} min • {allRecipes.find(r => r.id === activeId)?.servings} portions
+                  </Typography>
+                </Box>
+                <Chip
+                  label={allRecipes.find(r => r.id === activeId)?.difficulty}
+                  size="small"
+                  sx={{
+                    bgcolor: '#ffffff',
+                    color: '#ff9800',
+                    fontWeight: 'bold',
+                    border: '1px solid #ff9800'
+                  }}
+                />
+              </Box>
+            </Card>
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {/* Export Dialog */}
+      <Dialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Typography variant="h6" fontWeight="bold">
+            Exporter le Planning de Repas
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Choisissez le format d'export pour votre planning de repas
+          </Typography>
+
+          <List>
+            <ListItem
+              button
+              onClick={() => {
+                handleExportText();
+                setExportDialogOpen(false);
+              }}
+              sx={{
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                mb: 2,
+                '&:hover': { bgcolor: 'action.hover' }
+              }}
+            >
+              <ListItemIcon>
+                <FileDownload color="primary" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Fichier Texte (.txt)"
+                secondary="Format simple pour impression ou partage par email"
+              />
+            </ListItem>
+
+            <ListItem
+              button
+              onClick={() => {
+                handleExportPDF();
+                setExportDialogOpen(false);
+              }}
+              sx={{
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                '&:hover': { bgcolor: 'action.hover' }
+              }}
+            >
+              <ListItemIcon>
+                <PictureAsPdf color="error" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Format PDF"
+                secondary="Ouvre une fenêtre d'impression pour sauvegarder en PDF"
+              />
+            </ListItem>
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setExportDialogOpen(false)}>
+            Annuler
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -20,7 +20,14 @@ import {
   Tooltip,
   CircularProgress,
   Divider,
-  ButtonGroup
+  ButtonGroup,
+  TextField,
+  InputAdornment,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Paper
 } from '@mui/material';
 import {
   Add,
@@ -34,7 +41,10 @@ import {
   Error,
   Notifications,
   ShoppingCart,
-  Refresh
+  Refresh,
+  Search,
+  Sort,
+  Clear
 } from '@mui/icons-material';
 import { usePantry } from '../contexts/PantryContext';
 import { useFamily } from '../contexts/FirestoreFamilyContext';
@@ -58,6 +68,19 @@ const EXPIRATION_FILTERS = [
   { key: EXPIRATION_STATUS.WARNING, label: 'Attention (3-7j)', icon: <Warning />, color: 'warning' },
   { key: EXPIRATION_STATUS.CRITICAL, label: 'Critique (<3j)', icon: <Error />, color: 'error' },
   { key: EXPIRATION_STATUS.EXPIRED, label: 'Expirés', icon: <Error />, color: 'error' }
+];
+
+const SORT_OPTIONS = [
+  { value: 'name', label: 'Par Nom (A-Z)' },
+  { value: 'name_desc', label: 'Par Nom (Z-A)' },
+  { value: 'expiry', label: 'Par Date d\'Expiration' },
+  { value: 'quantity', label: 'Par Quantité (croissant)' },
+  { value: 'quantity_desc', label: 'Par Quantité (décroissant)' },
+  { value: 'recent', label: 'Récemment Ajoutés' },
+  { value: 'category', label: 'Par Catégorie' },
+  { value: 'location', label: 'Par Emplacement' },
+  { value: 'price', label: 'Par Prix (croissant)' },
+  { value: 'price_desc', label: 'Par Prix (décroissant)' }
 ];
 
 function Pantry() {
@@ -84,6 +107,10 @@ function Pantry() {
   const [selectedIngredients, setSelectedIngredients] = useState([]);
   const [selectionMode, setSelectionMode] = useState(false);
 
+  // Search and sort state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('expiry');
+
   // Get expiration status for an item
   const getExpirationStatus = (item) => {
     if (!item.expiryDate) return null;
@@ -108,29 +135,82 @@ function Pantry() {
     }
   };
 
-  // Filter items based on selected filter
+  // Filter and sort items based on selected filter, search term, and sort option
   useEffect(() => {
     let filtered = [...pantryItems];
-    
+
+    // Apply expiration filter
     if (selectedFilter !== 'all') {
-      filtered = pantryItems.filter(item => {
+      filtered = filtered.filter(item => {
         const status = getExpirationStatus(item);
         return status === selectedFilter;
       });
     }
-    
-    // Sort by expiration date (soonest first) then by name
+
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const normalizedSearch = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(item => {
+        // Search in ingredient name
+        if (item.ingredientName.toLowerCase().includes(normalizedSearch)) {
+          return true;
+        }
+
+        // Search in location
+        if (item.location && item.location.toLowerCase().includes(normalizedSearch)) {
+          return true;
+        }
+
+        // Search in notes
+        if (item.notes && item.notes.toLowerCase().includes(normalizedSearch)) {
+          return true;
+        }
+
+        // Search in supplier
+        if (item.supplier && item.supplier.toLowerCase().includes(normalizedSearch)) {
+          return true;
+        }
+
+        return false;
+      });
+    }
+
+    // Apply sorting
     filtered.sort((a, b) => {
-      if (a.expiryDate && b.expiryDate) {
-        return new Date(a.expiryDate) - new Date(b.expiryDate);
+      switch (sortBy) {
+        case 'name':
+          return a.ingredientName.localeCompare(b.ingredientName, 'fr');
+        case 'name_desc':
+          return b.ingredientName.localeCompare(a.ingredientName, 'fr');
+        case 'expiry':
+          // Sort by expiration date (soonest first) then by name
+          if (a.expiryDate && b.expiryDate) {
+            return new Date(a.expiryDate) - new Date(b.expiryDate);
+          }
+          if (a.expiryDate && !b.expiryDate) return -1;
+          if (!a.expiryDate && b.expiryDate) return 1;
+          return a.ingredientName.localeCompare(b.ingredientName, 'fr');
+        case 'quantity':
+          return a.quantity - b.quantity;
+        case 'quantity_desc':
+          return b.quantity - a.quantity;
+        case 'recent':
+          return new Date(b.lastUpdated || b.createdAt || 0) - new Date(a.lastUpdated || a.createdAt || 0);
+        case 'category':
+          return (a.category || 'Autres').localeCompare(b.category || 'Autres', 'fr');
+        case 'location':
+          return (a.location || 'Non spécifié').localeCompare(b.location || 'Non spécifié', 'fr');
+        case 'price':
+          return (a.purchasePrice || 0) - (b.purchasePrice || 0);
+        case 'price_desc':
+          return (b.purchasePrice || 0) - (a.purchasePrice || 0);
+        default:
+          return 0;
       }
-      if (a.expiryDate && !b.expiryDate) return -1;
-      if (!a.expiryDate && b.expiryDate) return 1;
-      return a.ingredientName.localeCompare(b.ingredientName, 'fr');
     });
-    
+
     setFilteredItems(filtered);
-  }, [pantryItems, selectedFilter]);
+  }, [pantryItems, selectedFilter, searchTerm, sortBy]);
 
   // Handle item deletion
   const handleDeleteItem = async (item) => {
@@ -298,8 +378,63 @@ function Pantry() {
       {/* Statistics Cards */}
       <PantryStatsCard stats={stats} />
 
-      {/* Filter Buttons */}
-      <Box sx={{ mb: 3 }}>
+      {/* Search and Sort Controls */}
+      <Paper elevation={1} sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Rechercher et Trier
+        </Typography>
+
+        <Grid container spacing={3} sx={{ mb: 3 }}>
+          <Grid item xs={12} md={6}>
+            <TextField
+              fullWidth
+              placeholder="Rechercher par nom, emplacement, notes..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => setSearchTerm('')}
+                    >
+                      <Clear />
+                    </IconButton>
+                  </InputAdornment>
+                )
+              }}
+            />
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <FormControl fullWidth>
+              <InputLabel>Trier par</InputLabel>
+              <Select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                label="Trier par"
+                startAdornment={
+                  <InputAdornment position="start">
+                    <Sort />
+                  </InputAdornment>
+                }
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+
+        {/* Filter Buttons */}
         <Typography variant="h6" gutterBottom>
           Filtrer par État d'Expiration
         </Typography>
@@ -319,7 +454,10 @@ function Pantry() {
         </ButtonGroup>
 
         {/* Selection Mode Controls */}
-        <Box sx={{ mt: 2 }}>
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Sélection d'Ingrédients
+          </Typography>
           <Button
             variant={selectionMode ? 'contained' : 'outlined'}
             color="secondary"
@@ -350,7 +488,7 @@ function Pantry() {
             </Typography>
           )}
         </Box>
-      </Box>
+      </Paper>
 
       {/* Recipe Recommendation Button */}
       {filteredItems.length > 0 && (

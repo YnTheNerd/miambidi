@@ -13,6 +13,8 @@ export const Pantry = lazy(() => import('../../pages/Pantry'));
 export const ShoppingList = lazy(() => import('../../pages/ShoppingList'));
 export const FamilyManagement = lazy(() => import('../../pages/FamilyManagement'));
 export const DragDropMealCalendar = lazy(() => import('../../components/calendar/DragDropMealCalendar'));
+export const Blog = lazy(() => import('../../pages/Blog'));
+export const SellerDashboard = lazy(() => import('../../pages/SellerDashboard'));
 
 // Debug components (only load in development)
 export const FirebaseTest = lazy(() => import('../../components/debug/FirebaseTest'));

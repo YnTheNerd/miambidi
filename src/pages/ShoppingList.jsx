@@ -36,13 +36,22 @@ import {
   Email,
   Send,
   AttachFile,
-  CloudDownload
+  CloudDownload,
+  PictureAsPdf,
+  Kitchen,
+  Clear,
+  RemoveShoppingCart,
+  Notifications
 } from '@mui/icons-material';
 import { useShoppingList } from '../contexts/ShoppingListContext.jsx';
 import { useRecipes } from '../contexts/RecipeContext.jsx';
 import { useMealPlan } from '../contexts/MealPlanContext.jsx';
 import { useFamily } from '../contexts/FirestoreFamilyContext.jsx';
+import { usePantry } from '../contexts/PantryContext.jsx';
+import { useNotification } from '../contexts/NotificationContext.jsx';
 import CategorySection from '../components/shopping/CategorySection.jsx';
+import SellerDiscovery from '../components/shopping/SellerDiscovery.jsx';
+import SellerResponses from '../components/shopping/SellerResponses.jsx';
 import { GROCERY_CATEGORIES } from '../types/shoppingList.js';
 
 function ShoppingList() {
@@ -60,14 +69,20 @@ function ShoppingList() {
     exportShoppingList,
     shareWithFamilyEmail,
     shareWithFamilyEmailAttachment,
-    downloadShoppingListFile
+    downloadShoppingListFile,
+    deductPantryFromShoppingList,
+    clearPantryDeductions
   } = useShoppingList();
 
   const { getAllRecipes } = useRecipes();
   const { mealPlan, hasMeals, getMealPlanStats } = useMealPlan();
   const { family, familyMembers } = useFamily();
+  const { pantryItems } = usePantry();
+  const { showNotification } = useNotification();
 
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [sellerDiscoveryOpen, setSellerDiscoveryOpen] = useState(false);
+  const [sellerResponsesOpen, setSellerResponsesOpen] = useState(false);
   const [generationOptions, setGenerationOptions] = useState({
     familySize: 4,
     startDate: new Date().toISOString().split('T')[0],
@@ -88,6 +103,34 @@ function ShoppingList() {
       setGenerateDialogOpen(false);
     } catch (error) {
       console.error('Failed to generate shopping list:', error);
+    }
+  };
+
+  const handleDeductPantry = async () => {
+    try {
+      const result = deductPantryFromShoppingList(pantryItems);
+      if (result.success) {
+        showNotification(result.message, 'success');
+      } else {
+        showNotification(result.message, 'warning');
+      }
+    } catch (error) {
+      console.error('Error deducting pantry:', error);
+      showNotification('Erreur lors de la déduction du garde-manger', 'error');
+    }
+  };
+
+  const handleClearPantryDeductions = async () => {
+    try {
+      const result = clearPantryDeductions();
+      if (result.success) {
+        showNotification(result.message, 'success');
+      } else {
+        showNotification(result.message, 'warning');
+      }
+    } catch (error) {
+      console.error('Error clearing pantry deductions:', error);
+      showNotification('Erreur lors de l\'effacement des déductions', 'error');
     }
   };
 
@@ -115,20 +158,39 @@ function ShoppingList() {
     printWindow.document.write(`
       <html>
         <head>
-          <title>Liste de Courses</title>
+          <title>Liste de Courses - MiamBidi</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            h1 { color: #2E7D32; }
-            pre { white-space: pre-wrap; font-family: Arial, sans-serif; }
+            body {
+              font-family: Arial, sans-serif;
+              margin: 20px;
+              line-height: 1.6;
+            }
+            h1 {
+              color: #2E7D32;
+              text-align: center;
+            }
+            pre {
+              white-space: pre-wrap;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+            }
+            @media print {
+              body { margin: 0; }
+              .no-print { display: none; }
+            }
           </style>
         </head>
         <body>
+          <div class="no-print" style="text-align: center; margin-bottom: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; background: #2E7D32; color: white; border: none; border-radius: 5px; cursor: pointer;">
+              Imprimer / Sauvegarder en PDF
+            </button>
+          </div>
           <pre>${printContent}</pre>
         </body>
       </html>
     `);
     printWindow.document.close();
-    printWindow.print();
   };
 
   const handleShareWithFamily = async () => {
@@ -370,10 +432,10 @@ function ShoppingList() {
                 <Button
                   variant="outlined"
                   size="small"
-                  startIcon={<Print />}
+                  startIcon={<PictureAsPdf />}
                   onClick={handlePrint}
                 >
-                  Imprimer
+                  Exporter PDF
                 </Button>
               </Box>
             </Box>
@@ -407,6 +469,66 @@ function ShoppingList() {
               )}
             </Box>
 
+            {/* Pantry Deduction Buttons */}
+            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={handleDeductPantry}
+                size="small"
+                startIcon={<Kitchen />}
+                disabled={!pantryItems || pantryItems.length === 0}
+              >
+                Déduire du garde-manger
+              </Button>
+
+              {currentShoppingList.pantryDeductionApplied && (
+                <Button
+                  variant="text"
+                  color="warning"
+                  onClick={handleClearPantryDeductions}
+                  size="small"
+                  startIcon={<Clear />}
+                >
+                  Effacer les déductions du garde-manger
+                </Button>
+              )}
+            </Box>
+
+            {/* Seller Marketplace Buttons */}
+            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Button
+                variant="contained"
+                onClick={() => setSellerDiscoveryOpen(true)}
+                size="small"
+                startIcon={<Send />}
+                sx={{
+                  bgcolor: '#d2eb34',
+                  color: 'black',
+                  '&:hover': { bgcolor: '#b8d62f' }
+                }}
+              >
+                Envoyer à un vendeur
+              </Button>
+
+              <Button
+                variant="outlined"
+                onClick={() => setSellerResponsesOpen(true)}
+                size="small"
+                startIcon={<Notifications />}
+                sx={{
+                  borderColor: '#d2eb34',
+                  color: '#d2eb34',
+                  '&:hover': {
+                    borderColor: '#b8d62f',
+                    bgcolor: '#d2eb3410'
+                  }
+                }}
+              >
+                Réponses des vendeurs
+              </Button>
+            </Box>
+
             {/* Clear Completed Button */}
             {stats.completedItems > 0 && (
               <Box sx={{ mt: 2 }}>
@@ -415,6 +537,7 @@ function ShoppingList() {
                   color="secondary"
                   onClick={clearCompletedItems}
                   size="small"
+                  startIcon={<RemoveShoppingCart />}
                 >
                   Effacer les articles achetés ({stats.completedItems})
                 </Button>
@@ -515,6 +638,21 @@ function ShoppingList() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Seller Discovery Dialog */}
+      <SellerDiscovery
+        open={sellerDiscoveryOpen}
+        onClose={() => setSellerDiscoveryOpen(false)}
+        shoppingListItems={currentShoppingList ?
+          Object.values(currentShoppingList.categories).flat() : []
+        }
+      />
+
+      {/* Seller Responses Dialog */}
+      <SellerResponses
+        open={sellerResponsesOpen}
+        onClose={() => setSellerResponsesOpen(false)}
+      />
     </Box>
   );
 }

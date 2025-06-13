@@ -527,7 +527,12 @@ function Ingredients() {
       <Fab
         color="primary"
         aria-label="Ajouter un ingrédient"
-        sx={{ position: 'fixed', bottom: 16, right: 16 }}
+        sx={{
+          position: 'fixed',
+          bottom: 16,
+          right: 16,
+          zIndex: 1200 // Below chatbot but above other content
+        }}
         onClick={() => setAddDialogOpen(true)}
       >
         <Add />

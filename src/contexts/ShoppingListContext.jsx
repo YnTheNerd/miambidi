@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { generateShoppingList } from '../utils/shoppingListGenerator.js';
 import { GROCERY_CATEGORIES } from '../types/shoppingList.js';
+import { convertToBaseUnit, convertFromBaseUnit, canAggregate } from '../utils/unitConversion.js';
 
 const ShoppingListContext = createContext();
 
@@ -534,6 +535,174 @@ export function ShoppingListProvider({ children }) {
   }, [currentShoppingList, generateShoppingListFileContent, generateShoppingListFilename]);
 
   /**
+   * Deducts available pantry quantities from shopping list items
+   * @param {object} pantryItems - Array of pantry items from PantryContext
+   * @returns {object} - Result object with deduction details
+   */
+  const deductPantryFromShoppingList = useCallback((pantryItems = []) => {
+    if (!currentShoppingList || !pantryItems.length) {
+      return {
+        success: false,
+        message: 'Aucune liste de courses ou garde-manger vide',
+        deductions: []
+      };
+    }
+
+    const deductions = [];
+    let totalItemsDeducted = 0;
+
+    setCurrentShoppingList(prev => {
+      const updatedList = { ...prev };
+
+      Object.keys(updatedList.categories).forEach(category => {
+        const categoryItems = [...updatedList.categories[category]];
+
+        categoryItems.forEach((item, index) => {
+          // Find matching pantry item
+          const pantryItem = pantryItems.find(pantryItem =>
+            pantryItem.ingredientName.toLowerCase() === item.name.toLowerCase()
+          );
+
+          if (pantryItem && pantryItem.quantity > 0) {
+            // Try to convert units for comparison
+            const shoppingBase = convertToBaseUnit(item.quantity, item.unit);
+            const pantryBase = convertToBaseUnit(pantryItem.quantity, pantryItem.unit);
+
+            // Only deduct if units are compatible (same type)
+            if (shoppingBase.type === pantryBase.type && shoppingBase.type !== 'unknown') {
+              const availableInShoppingUnits = convertFromBaseUnit(pantryBase.value, shoppingBase.type);
+
+              if (availableInShoppingUnits.quantity >= item.quantity) {
+                // Complete deduction - remove item entirely
+                categoryItems.splice(index, 1);
+                deductions.push({
+                  itemName: item.name,
+                  originalQuantity: item.quantity,
+                  originalUnit: item.unit,
+                  deductedQuantity: item.quantity,
+                  remainingQuantity: 0,
+                  pantryQuantity: pantryItem.quantity,
+                  pantryUnit: pantryItem.unit,
+                  type: 'complete'
+                });
+                totalItemsDeducted++;
+              } else if (availableInShoppingUnits.quantity > 0) {
+                // Partial deduction - reduce quantity
+                const remainingQuantity = item.quantity - availableInShoppingUnits.quantity;
+                categoryItems[index] = {
+                  ...item,
+                  quantity: remainingQuantity,
+                  originalQuantity: item.quantity,
+                  pantryDeduction: {
+                    deducted: availableInShoppingUnits.quantity,
+                    from: `${pantryItem.quantity} ${pantryItem.unit}`
+                  }
+                };
+                deductions.push({
+                  itemName: item.name,
+                  originalQuantity: item.quantity,
+                  originalUnit: item.unit,
+                  deductedQuantity: availableInShoppingUnits.quantity,
+                  remainingQuantity: remainingQuantity,
+                  pantryQuantity: pantryItem.quantity,
+                  pantryUnit: pantryItem.unit,
+                  type: 'partial'
+                });
+              }
+            }
+          }
+        });
+
+        updatedList.categories[category] = categoryItems;
+      });
+
+      updatedList.lastModified = new Date().toISOString();
+      updatedList.pantryDeductionApplied = true;
+      updatedList.pantryDeductionDate = new Date().toISOString();
+
+      // Recalculate stats
+      const totalItems = Object.values(updatedList.categories)
+        .reduce((sum, items) => sum + items.length, 0);
+      const completedItems = Object.values(updatedList.categories)
+        .reduce((sum, items) => sum + items.filter(item => item.isCompleted).length, 0);
+
+      updatedList.stats = {
+        ...updatedList.stats,
+        totalItems,
+        completedItems,
+        completionPercentage: totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0
+      };
+
+      return updatedList;
+    });
+
+    return {
+      success: true,
+      message: `${deductions.length} articles traités, ${totalItemsDeducted} articles complètement déduits`,
+      deductions,
+      totalItemsDeducted,
+      totalItemsPartiallyDeducted: deductions.filter(d => d.type === 'partial').length
+    };
+  }, [currentShoppingList]);
+
+  /**
+   * Clears pantry deductions from shopping list (restores original quantities)
+   */
+  const clearPantryDeductions = useCallback(() => {
+    if (!currentShoppingList || !currentShoppingList.pantryDeductionApplied) {
+      return {
+        success: false,
+        message: 'Aucune déduction de garde-manger à effacer'
+      };
+    }
+
+    setCurrentShoppingList(prev => {
+      const updatedList = { ...prev };
+
+      Object.keys(updatedList.categories).forEach(category => {
+        const categoryItems = updatedList.categories[category].map(item => {
+          if (item.originalQuantity && item.pantryDeduction) {
+            // Restore original quantity
+            return {
+              ...item,
+              quantity: item.originalQuantity,
+              originalQuantity: undefined,
+              pantryDeduction: undefined
+            };
+          }
+          return item;
+        });
+
+        updatedList.categories[category] = categoryItems;
+      });
+
+      updatedList.lastModified = new Date().toISOString();
+      updatedList.pantryDeductionApplied = false;
+      updatedList.pantryDeductionDate = null;
+
+      // Recalculate stats
+      const totalItems = Object.values(updatedList.categories)
+        .reduce((sum, items) => sum + items.length, 0);
+      const completedItems = Object.values(updatedList.categories)
+        .reduce((sum, items) => sum + items.filter(item => item.isCompleted).length, 0);
+
+      updatedList.stats = {
+        ...updatedList.stats,
+        totalItems,
+        completedItems,
+        completionPercentage: totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0
+      };
+
+      return updatedList;
+    });
+
+    return {
+      success: true,
+      message: 'Déductions du garde-manger effacées'
+    };
+  }, [currentShoppingList]);
+
+  /**
    * Shares shopping list with family via email
    * @param {array} familyEmails - Array of family member email addresses
    * @param {object} familyData - Family data for enhanced email formatting
@@ -829,6 +998,10 @@ export function ShoppingListProvider({ children }) {
     shareWithFamilyEmailAttachment,
     downloadShoppingListFile,
     generateShoppingListFilename,
+
+    // Pantry Integration
+    deductPantryFromShoppingList,
+    clearPantryDeductions,
 
     // Future Firebase integration
     saveToFirebase,

@@ -124,6 +124,21 @@ export function convertFromBaseUnit(value, type) {
 }
 
 /**
+ * Checks if two units can be aggregated (compatible unit types)
+ * @param {string} unit1 - First unit
+ * @param {string} unit2 - Second unit
+ * @returns {boolean} - Whether the units can be aggregated
+ */
+export function canAggregate(unit1, unit2) {
+  // Convert both units to base units to check if they have the same final type
+  const base1 = convertToBaseUnit(1, unit1);
+  const base2 = convertToBaseUnit(1, unit2);
+
+  // Units can be aggregated if they convert to the same type and it's not unknown
+  return base1.type === base2.type && base1.type !== 'unknown';
+}
+
+/**
  * Checks if two ingredients can be aggregated (same name and compatible units)
  * @param {object} ingredient1 - First ingredient
  * @param {object} ingredient2 - Second ingredient
@@ -134,12 +149,9 @@ export function canAggregateIngredients(ingredient1, ingredient2) {
   if (ingredient1.name.toLowerCase() !== ingredient2.name.toLowerCase()) {
     return false;
   }
-  
+
   // Must have compatible unit types
-  const type1 = getUnitType(ingredient1.unit);
-  const type2 = getUnitType(ingredient2.unit);
-  
-  return type1 === type2 && type1 !== 'unknown';
+  return canAggregate(ingredient1.unit, ingredient2.unit);
 }
 
 /**
@@ -238,6 +250,7 @@ export default {
   getUnitType,
   convertToBaseUnit,
   convertFromBaseUnit,
+  canAggregate,
   canAggregateIngredients,
   aggregateIngredients,
   scaleIngredient,

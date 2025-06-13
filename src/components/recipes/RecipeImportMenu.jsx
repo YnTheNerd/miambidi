@@ -21,6 +21,7 @@ import {
 } from '@mui/icons-material';
 import { useRecipes } from '../../contexts/RecipeContext';
 import { useFamily } from '../../contexts/FirestoreFamilyContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 /**
  * RecipeImportMenu Component
@@ -36,6 +37,7 @@ function RecipeImportMenu({
 }) {
   const { importRecipe } = useRecipes();
   const { currentFamily } = useFamily();
+  const { currentUser } = useAuth();
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [selectedImportType, setSelectedImportType] = useState(null);
 
@@ -68,11 +70,12 @@ function RecipeImportMenu({
     if (selectedImportType) {
       try {
         await importRecipe(
-          recipe, 
-          selectedImportType, 
-          currentUserId, 
-          currentFamilyId, 
-          currentFamily?.name
+          recipe,
+          selectedImportType,
+          currentUserId,
+          currentFamilyId,
+          currentFamily?.name,
+          currentUser?.displayName || currentUser?.email || 'Utilisateur'
         );
         setConfirmDialogOpen(false);
         setSelectedImportType(null);
@@ -101,12 +104,13 @@ function RecipeImportMenu({
   const getImportedRecipeName = (importType) => {
     if (importType === 'family') {
       const isOriginalFromCurrentFamily = recipe.familyId === currentFamilyId;
-      return isOriginalFromCurrentFamily 
-        ? recipe.name 
+      return isOriginalFromCurrentFamily
+        ? recipe.name
         : `${recipe.name} (par ${currentFamily?.name || 'Famille'})`;
     }
     if (importType === 'private') {
-      return `${recipe.name} (Copie Privée)`;
+      const displayName = currentUser?.displayName || currentUser?.email || 'Utilisateur';
+      return `${recipe.name} (importé par ${displayName})`;
     }
     return recipe.name;
   };

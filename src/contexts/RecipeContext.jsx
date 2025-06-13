@@ -846,9 +846,22 @@ export function RecipeProvider({ children }) {
         (recipeData.visibility === VISIBILITY_TYPES.PUBLIC && isAdmin)
       );
 
+      // NEW: Enhanced admin editing permissions
+      // Family admins can edit ANY recipe created by their family members
+      // Exception: Private recipes can only be edited by their creators
+      // Note: This logic is implemented in the UI components (RecipeCard, RecipeDialog)
+      // const canAdminEdit = isAdmin && familyId && recipeData.familyId === familyId &&
+      //                     recipeData.visibility !== VISIBILITY_TYPES.PRIVATE;
+
       if (!isCreator && !isFamilyAdmin) {
         throw new Error('Seuls le créateur de la recette et les admins familiaux peuvent modifier la visibilité');
       }
+
+      // Track promotion history for ownership and attribution
+      const currentVisibility = recipeData.visibility;
+      const isPromotion = (currentVisibility === VISIBILITY_TYPES.PRIVATE && newVisibility === VISIBILITY_TYPES.FAMILY) ||
+                         (currentVisibility === VISIBILITY_TYPES.PRIVATE && newVisibility === VISIBILITY_TYPES.PUBLIC) ||
+                         (currentVisibility === VISIBILITY_TYPES.FAMILY && newVisibility === VISIBILITY_TYPES.PUBLIC);
 
       // Update visibility and related fields
       const updateData = {
@@ -867,6 +880,36 @@ export function RecipeProvider({ children }) {
         updateData.familyId = null; // Public recipes don't belong to specific families
       }
 
+      // Track ownership and promotion history
+      if (isPromotion) {
+        const promotionRecord = {
+          from: currentVisibility,
+          to: newVisibility,
+          promotedBy: userId,
+          promotedByName: currentUser.displayName || currentUser.email || 'Utilisateur',
+          promotedAt: serverTimestamp()
+        };
+
+        // Initialize ownership if it doesn't exist
+        const currentOwnership = recipeData.ownership || {
+          originalCreator: recipeData.createdBy,
+          currentOwner: recipeData.createdBy,
+          canEdit: [recipeData.createdBy],
+          lastPromotedBy: null,
+          promotionHistory: []
+        };
+
+        updateData.ownership = {
+          ...currentOwnership,
+          lastPromotedBy: userId,
+          promotionHistory: [...(currentOwnership.promotionHistory || []), promotionRecord],
+          // Add promoter to edit permissions if promoting to public
+          canEdit: newVisibility === VISIBILITY_TYPES.PUBLIC && !currentOwnership.canEdit.includes(userId)
+            ? [...currentOwnership.canEdit, userId]
+            : currentOwnership.canEdit
+        };
+      }
+
       await updateDoc(recipeRef, updateData);
 
       setLoading(false);
@@ -883,7 +926,7 @@ export function RecipeProvider({ children }) {
   }, [currentUser, currentFamily, showNotification]);
 
   // Import recipe functionality
-  const importRecipe = useCallback(async (originalRecipe, importType, currentUserId, currentFamilyId, familyName = '') => {
+  const importRecipe = useCallback(async (originalRecipe, importType, currentUserId, currentFamilyId, familyName = '', importerName = '') => {
     if (!currentUser) {
       throw new Error('Utilisateur non connecté');
     }
@@ -910,7 +953,9 @@ export function RecipeProvider({ children }) {
       if (importType === 'family' && !isOriginalCreatedByCurrentFamily) {
         newRecipeName = `${originalRecipe.name} (par ${familyName || 'Famille'})`;
       } else if (importType === 'private') {
-        newRecipeName = `${originalRecipe.name} (Copie Privée)`;
+        // Use actual importer's name instead of "Copie Privée"
+        const displayName = importerName || currentUser.displayName || currentUser.email || 'Utilisateur';
+        newRecipeName = `${originalRecipe.name} (importé par ${displayName})`;
       }
 
       // Create imported recipe
@@ -925,12 +970,23 @@ export function RecipeProvider({ children }) {
         public: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        // Track import relationship
+        // Enhanced import tracking with attribution
         importedFrom: {
           originalRecipeId: originalRecipe.id,
           originalCreatedBy: originalRecipe.createdBy,
+          originalCreatedByName: originalRecipe.createdByName || 'Utilisateur Inconnu',
           importedAt: serverTimestamp(),
+          importedBy: userId,
+          importedByName: importerName || currentUser.displayName || currentUser.email || 'Utilisateur',
           importType: importType
+        },
+        // Track ownership for editing permissions
+        ownership: {
+          originalCreator: originalRecipe.createdBy,
+          currentOwner: userId,
+          canEdit: [originalRecipe.createdBy, userId], // Both original creator and importer can edit
+          lastPromotedBy: null, // Track who promoted to public
+          promotionHistory: [] // Track visibility promotion history
         },
         // Reset social metrics for imported recipe
         rating: 0,
@@ -1023,8 +1079,51 @@ export function RecipeProvider({ children }) {
       }
 
       const recipeData = recipeDoc.data();
-      if (recipeData.createdBy !== currentUser.uid) {
-        throw new Error('Vous n\'avez pas la permission de modifier cette recette');
+      const userId = currentUser.uid;
+
+      // Get family admin status
+      const isAdmin = currentFamily && currentUser?.role === 'admin';
+      const familyId = currentFamily?.id;
+
+      // Permission checking logic following MiamBidi requirements
+
+      // 1. Recipe creators can always edit their own recipes
+      const isCreator = recipeData.createdBy === userId;
+
+      // 2. Check ownership-based editing permissions (for imported recipes)
+      const canEditByOwnership = recipeData.ownership?.canEdit?.includes(userId) || false;
+
+      // 3. Family admin permissions
+      const canEditAsAdmin = isAdmin && familyId && (
+        // For private and family recipes, check if they belong to the admin's family
+        (recipeData.familyId === familyId) ||
+        // For public recipes, allow admin editing if they have admin rights
+        (recipeData.visibility === VISIBILITY_TYPES.PUBLIC && isAdmin)
+      );
+
+      // 4. Determine if user can edit this recipe
+      const canEdit = isCreator || canEditByOwnership || canEditAsAdmin;
+
+      if (!canEdit) {
+        // Provide specific French error messages based on the scenario
+        let errorMessage = 'Vous n\'avez pas la permission de modifier cette recette';
+
+        if (recipeData.importedFrom) {
+          // This is an imported recipe
+          if (recipeData.visibility === VISIBILITY_TYPES.FAMILY) {
+            errorMessage = 'Seuls l\'importateur de cette recette familiale et les admins familiaux peuvent la modifier';
+          } else if (recipeData.visibility === VISIBILITY_TYPES.PRIVATE) {
+            errorMessage = 'Seuls l\'importateur de cette recette privée et les admins familiaux peuvent la modifier';
+          }
+        } else if (recipeData.visibility === VISIBILITY_TYPES.PUBLIC) {
+          errorMessage = 'Seuls le créateur de cette recette publique et les admins familiaux peuvent la modifier';
+        } else if (recipeData.visibility === VISIBILITY_TYPES.FAMILY) {
+          errorMessage = 'Seuls le créateur de cette recette familiale et les admins familiaux peuvent la modifier';
+        } else if (recipeData.visibility === VISIBILITY_TYPES.PRIVATE) {
+          errorMessage = 'Seuls le créateur de cette recette privée et les admins familiaux peuvent la modifier';
+        }
+
+        throw new Error(errorMessage);
       }
 
       // Update recipe with new data
@@ -1046,7 +1145,7 @@ export function RecipeProvider({ children }) {
       showNotification('Erreur lors de la mise à jour de la recette', 'error');
       throw error;
     }
-  }, [currentUser, showNotification]);
+  }, [currentUser, currentFamily, showNotification]);
 
   // Delete recipe from Firestore
   const deleteRecipe = useCallback(async (id, isAdmin = false, adminFamilyId = null) => {

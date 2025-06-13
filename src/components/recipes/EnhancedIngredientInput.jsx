@@ -79,18 +79,20 @@ function EnhancedIngredientInput({ onAddIngredient, error }) {
       setNewIngredient(prev => ({
         ...prev,
         name: value.name,
-        category: value.category || 'Autres'
+        category: value.category || 'Autres',
+        // Auto-fill unit from ingredient database
+        unit: value.unit || prev.unit
       }));
     } else if (reason === 'clear') {
       setSelectedIngredient(null);
-      setNewIngredient(prev => ({ ...prev, name: '', category: '' }));
+      setNewIngredient(prev => ({ ...prev, name: '', category: '', unit: '' }));
     }
   };
 
   // Handle input value change (for freeSolo)
   const handleInputChange = (event, value, reason) => {
     setInputValue(value);
-    
+
     if (reason === 'input') {
       // User is typing
       const existing = findExistingIngredient(value);
@@ -99,7 +101,9 @@ function EnhancedIngredientInput({ onAddIngredient, error }) {
         setNewIngredient(prev => ({
           ...prev,
           name: existing.name,
-          category: existing.category || 'Autres'
+          category: existing.category || 'Autres',
+          // Auto-fill unit from ingredient database if not already set
+          unit: prev.unit || existing.unit || ''
         }));
       } else {
         setSelectedIngredient(null);
@@ -107,6 +111,7 @@ function EnhancedIngredientInput({ onAddIngredient, error }) {
           ...prev,
           name: value,
           category: prev.category || 'Autres'
+          // Don't auto-fill unit for new ingredients
         }));
       }
     }

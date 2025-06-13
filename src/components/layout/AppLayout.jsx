@@ -6,6 +6,7 @@
 import React, { memo } from 'react';
 import { Box, Toolbar, Container, Fade } from '@mui/material';
 import Navigation from './Navigation';
+import ChatbotContainer from '../chatbot/ChatbotContainer';
 
 const AppLayout = memo(({ children }) => {
   return (
@@ -50,6 +51,9 @@ const AppLayout = memo(({ children }) => {
           </Container>
         </Fade>
       </Box>
+
+      {/* Chatbot - Available on all protected pages */}
+      <ChatbotContainer />
     </Box>
   );
 });

@@ -14,6 +14,8 @@ import { PantryProvider } from '../contexts/PantryContext';
 import { RecipeProvider } from '../contexts/RecipeContext';
 import { ShoppingListProvider } from '../contexts/ShoppingListContext';
 import { MealPlanProvider } from '../contexts/MealPlanContext';
+import { BlogProvider } from '../contexts/BlogContext';
+import { SellerProvider } from '../contexts/SellerContext';
 
 // Create enhanced theme with smooth animations and transitions
 const theme = createTheme({
@@ -236,7 +238,11 @@ const ContextProviders = memo(({ children }) => {
               <RecipeProvider>
                 <MealPlanProvider>
                   <ShoppingListProvider>
-                    {children}
+                    <SellerProvider>
+                      <BlogProvider>
+                        {children}
+                      </BlogProvider>
+                    </SellerProvider>
                   </ShoppingListProvider>
                 </MealPlanProvider>
               </RecipeProvider>
